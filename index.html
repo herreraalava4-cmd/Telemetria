@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoreo IoT Home</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #f4f6f9;
+            color: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 1.8rem;
+            color: #2c3e50;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        .header p {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+        }
+        .dashboard {
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 6px;
+        }
+        .temp-card::before { background: #e74c3c; }
+        .hum-card::before { background: #3498db; }
+        
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+        .card-data {
+            display: flex;
+            align-items: baseline;
+        }
+        .value {
+            font-size: 3.5rem;
+            font-weight: 800;
+            color: #2c3e50;
+        }
+        .unit {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        .temp-card .unit { color: #e74c3c; }
+        .hum-card .unit { color: #3498db; }
+        
+        .status-footer {
+            margin-top: 25px;
+            font-size: 0.8rem;
+            color: #bdc3c7;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>IoT Smart Telemetry</h1>
+        <p>Monitoreo en tiempo real desde la nube</p>
+    </div>
+
+    <div class="dashboard">
+        <div class="card temp-card">
+            <div class="card-title">Temperatura</div>
+            <div class="card-data">
+                <span id="temp" class="value">--</span>
+                <span class="unit">°C</span>
+            </div>
+        </div>
+
+        <div class="card hum-card">
+            <div class="card-title">Humedad Ambiente</div>
+            <div class="card-data">
+                <span id="hum" class="value">--</span>
+                <span class="unit">%</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-footer">
+        Conectado a Firebase Realtime Database
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAv81YNKQ76L4aPJgzKXsh4BSBFSCmbga8",
+            authDomain: "iot-home-709a9.firebaseapp.com",
+            databaseURL: "https://iot-home-709a9-default-rtdb.firebaseio.com",
+            projectId: "iot-home-709a9",
+            storageBucket: "iot-home-709a9.firebasestorage.app",
+            messagingSenderId: "979997806461",
+            appId: "1:979997806461:web:bc8deefcd688277148c614"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        const tempRef = ref(db, 'sensor/temperatura');
+        onValue(tempRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data !== null) {
+                document.getElementById('temp').innerText = Number(data).toFixed(1);
+            }
+        });
+
+        const humRef = ref(db, 'sensor/humedad');
+        onValue(humRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data !== null) {
+                document.getElementById('hum').innerText = Number(data).toFixed(1);
+            }
+        });
+    </script>
+</body>
+</html>
