@@ -91,9 +91,27 @@
         
         .status-footer {
             margin-top: 25px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .time-badge {
+            background: #e8f4f8;
+            color: #2980b9;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .connection-status {
             font-size: 0.8rem;
             color: #bdc3c7;
-            text-align: center;
         }
     </style>
 </head>
@@ -123,12 +141,18 @@
     </div>
 
     <div class="status-footer">
-        Conectado a Firebase Realtime Database
+        <div class="time-badge" id="timestamp">
+            ⏳ Esperando datos del sensor...
+        </div>
+        <div class="connection-status">
+            Conectado a Firebase RTDB
+        </div>
     </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        // Importamos las funciones query y limitToLast para traer solo el último dato
+        import { getDatabase, ref, query, limitToLast, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAv81YNKQ76L4aPJgzKXsh4BSBFSCmbga8",
@@ -143,20 +167,35 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        const tempRef = ref(db, 'sensor/temperatura');
-        onValue(tempRef, (snapshot) => {
-            const data = snapshot.val();
-            if (data !== null) {
-                document.getElementById('temp').innerText = Number(data).toFixed(1);
-            }
-        });
+        // Apuntamos al historial y pedimos estrictamente el ÚLTIMO registro
+        const historialRef = query(ref(db, 'sensor/historial'), limitToLast(1));
 
-        const humRef = ref(db, 'sensor/humedad');
-        onValue(humRef, (snapshot) => {
-            const data = snapshot.val();
-            if (data !== null) {
-                document.getElementById('hum').innerText = Number(data).toFixed(1);
-            }
+        onValue(historialRef, (snapshot) => {
+            snapshot.forEach((childSnapshot) => {
+                const data = childSnapshot.val();
+                
+                if (data !== null) {
+                    // 1. Actualizar Temperatura y Humedad
+                    document.getElementById('temp').innerText = Number(data.temp).toFixed(1);
+                    document.getElementById('hum').innerText = Number(data.hum).toFixed(1);
+
+                    // 2. Convertir el Timestamp de Firebase a Hora Local
+                    // Firebase guarda el tiempo en milisegundos (UNIX)
+                    const fechaObj = new Date(data.timestamp);
+                    
+                    // Formatear la fecha (Ej: 10/06/2026)
+                    const fechaStr = fechaObj.toLocaleDateString('es-ES');
+                    
+                    // Formatear la hora (Ej: 22:15)
+                    const horaStr = fechaObj.toLocaleTimeString('es-ES', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    });
+
+                    // 3. Imprimirlo en la tarjeta de la interfaz
+                    document.getElementById('timestamp').innerText = `Última lectura: ${fechaStr} a las ${horaStr}`;
+                }
+            });
         });
     </script>
 </body>
