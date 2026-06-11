@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monitoreo IoT Home</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <style>
         * {
             box-sizing: border-box;
@@ -17,9 +20,9 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
+            justify-content: flex-start;
             min-height: 100vh;
-            padding: 20px;
+            padding: 40px 20px;
         }
         .header {
             text-align: center;
@@ -37,11 +40,24 @@
         }
         .dashboard {
             width: 100%;
-            max-width: 400px;
+            max-width: 800px; /* Ampliado para que quepa el gráfico */
             display: flex;
             flex-direction: column;
             gap: 20px;
         }
+        .cards-container {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+        }
+        
+        /* Ajuste responsivo para las tarjetas */
+        @media (max-width: 600px) {
+            .cards-container {
+                flex-direction: column;
+            }
+        }
+
         .card {
             background: #ffffff;
             border-radius: 20px;
@@ -52,6 +68,7 @@
             align-items: center;
             position: relative;
             overflow: hidden;
+            flex: 1; /* Hace que las tarjetas compartan el espacio equitativamente */
         }
         .card::before {
             content: '';
@@ -63,6 +80,7 @@
         }
         .temp-card::before { background: #e74c3c; }
         .hum-card::before { background: #3498db; }
+        .chart-card::before { background: #2ecc71; } /* Color para la tarjeta del gráfico */
         
         .card-title {
             font-size: 1rem;
@@ -89,6 +107,12 @@
         .temp-card .unit { color: #e74c3c; }
         .hum-card .unit { color: #3498db; }
         
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
         .status-footer {
             margin-top: 25px;
             display: flex;
@@ -123,19 +147,28 @@
     </div>
 
     <div class="dashboard">
-        <div class="card temp-card">
-            <div class="card-title">Temperatura</div>
-            <div class="card-data">
-                <span id="temp" class="value">--</span>
-                <span class="unit">°C</span>
+        <div class="cards-container">
+            <div class="card temp-card">
+                <div class="card-title">Temperatura</div>
+                <div class="card-data">
+                    <span id="temp" class="value">--</span>
+                    <span class="unit">°C</span>
+                </div>
+            </div>
+
+            <div class="card hum-card">
+                <div class="card-title">Humedad Ambiente</div>
+                <div class="card-data">
+                    <span id="hum" class="value">--</span>
+                    <span class="unit">%</span>
+                </div>
             </div>
         </div>
 
-        <div class="card hum-card">
-            <div class="card-title">Humedad Ambiente</div>
-            <div class="card-data">
-                <span id="hum" class="value">--</span>
-                <span class="unit">%</span>
+        <div class="card chart-card">
+            <div class="card-title">Historial Reciente</div>
+            <div class="chart-container">
+                <canvas id="myChart"></canvas>
             </div>
         </div>
     </div>
@@ -151,7 +184,6 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        // Importamos las funciones query y limitToLast para traer solo el último dato
         import { getDatabase, ref, query, limitToLast, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
@@ -167,35 +199,110 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // Apuntamos al historial y pedimos estrictamente el ÚLTIMO registro
-        const historialRef = query(ref(db, 'sensor/historial'), limitToLast(1));
+        // --- CONFIGURACIÓN DEL GRÁFICO (Chart.js) ---
+        const ctx = document.getElementById('myChart').getContext('2d');
+        const miGrafico = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Aquí irán las horas
+                datasets: [
+                    {
+                        label: 'Temperatura (°C)',
+                        data: [], // Aquí irán los datos de temperatura
+                        borderColor: '#e74c3c',
+                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.4, // Curvas suaves
+                        fill: true,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: 'Humedad (%)',
+                        data: [], // Aquí irán los datos de humedad
+                        borderColor: '#3498db',
+                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: true,
+                        yAxisID: 'y1'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Temperatura (°C)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Humedad (%)' },
+                        grid: { drawOnChartArea: false } // Para no cruzar las líneas de la cuadrícula
+                    }
+                },
+                plugins: {
+                    legend: { position: 'top' }
+                }
+            }
+        });
+
+
+        // --- LECTURA DE FIREBASE ---
+        // Ahora pedimos los ÚLTIMOS 20 registros en lugar de solo 1
+        const historialRef = query(ref(db, 'sensor/historial'), limitToLast(20));
 
         onValue(historialRef, (snapshot) => {
+            // Arrays temporales para reconstruir el gráfico con los nuevos datos
+            const horas = [];
+            const temps = [];
+            const hums = [];
+            let ultimoDato = null;
+
             snapshot.forEach((childSnapshot) => {
                 const data = childSnapshot.val();
-                
                 if (data !== null) {
-                    // 1. Actualizar Temperatura y Humedad
-                    document.getElementById('temp').innerText = Number(data.temp).toFixed(1);
-                    document.getElementById('hum').innerText = Number(data.hum).toFixed(1);
-
-                    // 2. Convertir el Timestamp de Firebase a Hora Local
-                    // Firebase guarda el tiempo en milisegundos (UNIX)
+                    ultimoDato = data; // Vamos guardando para saber cuál fue el último
+                    
+                    // Formateamos la hora para la etiqueta del gráfico (e.g. "22:15")
                     const fechaObj = new Date(data.timestamp);
-                    
-                    // Formatear la fecha (Ej: 10/06/2026)
-                    const fechaStr = fechaObj.toLocaleDateString('es-ES');
-                    
-                    // Formatear la hora (Ej: 22:15)
-                    const horaStr = fechaObj.toLocaleTimeString('es-ES', { 
+                    const horaFormateada = fechaObj.toLocaleTimeString('es-ES', { 
                         hour: '2-digit', 
                         minute: '2-digit' 
                     });
 
-                    // 3. Imprimirlo en la tarjeta de la interfaz
-                    document.getElementById('timestamp').innerText = `Última lectura: ${fechaStr} a las ${horaStr}`;
+                    horas.push(horaFormateada);
+                    temps.push(data.temp);
+                    hums.push(data.hum);
                 }
             });
+
+            // Si recibimos datos, actualizamos la web
+            if (ultimoDato !== null) {
+                // 1. Actualizar Tarjetas Principales con el último dato
+                document.getElementById('temp').innerText = Number(ultimoDato.temp).toFixed(1);
+                document.getElementById('hum').innerText = Number(ultimoDato.hum).toFixed(1);
+
+                // 2. Actualizar el Mensaje de Timestamp
+                const fechaFinal = new Date(ultimoDato.timestamp);
+                const fechaStr = fechaFinal.toLocaleDateString('es-ES');
+                const horaStr = fechaFinal.toLocaleTimeString('es-ES', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                });
+                document.getElementById('timestamp').innerText = `Última lectura: ${fechaStr} a las ${horaStr}`;
+
+                // 3. Actualizar el Gráfico
+                miGrafico.data.labels = horas;
+                miGrafico.data.datasets[0].data = temps;
+                miGrafico.data.datasets[1].data = hums;
+                miGrafico.update(); // Ordenamos a Chart.js redibujar
+            }
         });
     </script>
 </body>
