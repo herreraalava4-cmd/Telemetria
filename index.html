@@ -40,10 +40,11 @@
         }
         .dashboard {
             width: 100%;
-            max-width: 800px; /* Ampliado para que quepa el gráfico */
+            max-width: 800px;
             display: flex;
             flex-direction: column;
             gap: 20px;
+            margin-bottom: 20px;
         }
         .cards-container {
             display: flex;
@@ -51,7 +52,6 @@
             width: 100%;
         }
         
-        /* Ajuste responsivo para las tarjetas */
         @media (max-width: 600px) {
             .cards-container {
                 flex-direction: column;
@@ -68,7 +68,7 @@
             align-items: center;
             position: relative;
             overflow: hidden;
-            flex: 1; /* Hace que las tarjetas compartan el espacio equitativamente */
+            flex: 1;
         }
         .card::before {
             content: '';
@@ -80,7 +80,9 @@
         }
         .temp-card::before { background: #e74c3c; }
         .hum-card::before { background: #3498db; }
-        .chart-card::before { background: #2ecc71; } /* Color para la tarjeta del gráfico */
+        .chart-card::before { background: #2ecc71; }
+        .history-card { width: 100%; max-width: 800px; } /* Ajuste ancho tabla */
+        .history-card::before { background: #9b59b6; }
         
         .card-title {
             font-size: 1rem;
@@ -137,6 +139,59 @@
             font-size: 0.8rem;
             color: #bdc3c7;
         }
+        .filtros {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+
+        .filtros button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 8px;
+            background: #3498db;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .filtros button:hover {
+            background: #2980b9;
+        }
+
+        .filtros input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+        }
+
+        .tabla-container {
+            overflow-x: auto;
+            width: 100%;
+            max-height: 400px; /* Scroll para muchos datos */
+        }
+
+        #tablaLecturas {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #tablaLecturas th,
+        #tablaLecturas td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            text-align: center;
+        }
+
+        #tablaLecturas th {
+            background: #f4f6f9;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        
     </style>
 </head>
 <body>
@@ -173,6 +228,31 @@
         </div>
     </div>
 
+    <div class="card history-card">
+        <div class="card-title">Historial por Fecha</div>
+
+        <div class="filtros">
+            <input type="date" id="fechaFiltro">
+            <button id="btnFiltrar">Filtrar</button>
+            <button id="btnCSV">Descargar CSV</button>
+        </div>
+
+        <div class="tabla-container">
+            <table id="tablaLecturas">
+                <thead>
+                    <tr>
+                        <th>Hora</th>
+                        <th>Temperatura (°C)</th>
+                        <th>Humedad (%)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="3">Selecciona una fecha para ver los datos</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div class="status-footer">
         <div class="time-badge" id="timestamp">
             ⏳ Esperando datos del sensor...
@@ -184,7 +264,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getDatabase, ref, query, limitToLast, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyAv81YNKQ76L4aPJgzKXsh4BSBFSCmbga8",
@@ -204,21 +284,21 @@
         const miGrafico = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: [], // Aquí irán las horas
+                labels: [], 
                 datasets: [
                     {
                         label: 'Temperatura (°C)',
-                        data: [], // Aquí irán los datos de temperatura
+                        data: [],
                         borderColor: '#e74c3c',
                         backgroundColor: 'rgba(231, 76, 60, 0.1)',
                         borderWidth: 2,
-                        tension: 0.4, // Curvas suaves
+                        tension: 0.4, 
                         fill: true,
                         yAxisID: 'y'
                     },
                     {
                         label: 'Humedad (%)',
-                        data: [], // Aquí irán los datos de humedad
+                        data: [], 
                         borderColor: '#3498db',
                         backgroundColor: 'rgba(52, 152, 219, 0.1)',
                         borderWidth: 2,
@@ -233,43 +313,39 @@
                 maintainAspectRatio: false,
                 scales: {
                     y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
+                        type: 'linear', display: true, position: 'left',
                         title: { display: true, text: 'Temperatura (°C)' }
                     },
                     y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
+                        type: 'linear', display: true, position: 'right',
                         title: { display: true, text: 'Humedad (%)' },
-                        grid: { drawOnChartArea: false } // Para no cruzar las líneas de la cuadrícula
+                        grid: { drawOnChartArea: false } 
                     }
                 },
-                plugins: {
-                    legend: { position: 'top' }
-                }
+                plugins: { legend: { position: 'top' } }
             }
         });
 
 
-        // --- LECTURA DE FIREBASE ---
-        // Ahora pedimos los ÚLTIMOS 20 registros en lugar de solo 1
-        const historialRef = query(ref(db, 'sensor/historial'), limitToLast(20));
+        // --- LECTURA DE FIREBASE Y LÓGICA DE TABLA ---
+        const historialRef = ref(db, 'sensor/historial');
+        let registrosCompletos = [];
 
         onValue(historialRef, (snapshot) => {
-            // Arrays temporales para reconstruir el gráfico con los nuevos datos
             const horas = [];
             const temps = [];
             const hums = [];
             let ultimoDato = null;
+            
+            // Vaciamos el arreglo antes de llenarlo con la data actualizada
+            registrosCompletos = [];
 
             snapshot.forEach((childSnapshot) => {
                 const data = childSnapshot.val();
                 if (data !== null) {
-                    ultimoDato = data; // Vamos guardando para saber cuál fue el último
+                    registrosCompletos.push(data); // Guardar para la tabla
+                    ultimoDato = data; 
                     
-                    // Formateamos la hora para la etiqueta del gráfico (e.g. "22:15")
                     const fechaObj = new Date(data.timestamp);
                     const horaFormateada = fechaObj.toLocaleTimeString('es-ES', { 
                         hour: '2-digit', 
@@ -282,28 +358,122 @@
                 }
             });
 
-            // Si recibimos datos, actualizamos la web
+            // Actualización de Tarjetas y Gráfico
             if (ultimoDato !== null) {
-                // 1. Actualizar Tarjetas Principales con el último dato
                 document.getElementById('temp').innerText = Number(ultimoDato.temp).toFixed(1);
                 document.getElementById('hum').innerText = Number(ultimoDato.hum).toFixed(1);
 
-                // 2. Actualizar el Mensaje de Timestamp
                 const fechaFinal = new Date(ultimoDato.timestamp);
                 const fechaStr = fechaFinal.toLocaleDateString('es-ES');
                 const horaStr = fechaFinal.toLocaleTimeString('es-ES', { 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                    hour: '2-digit', minute: '2-digit' 
                 });
                 document.getElementById('timestamp').innerText = `Última lectura: ${fechaStr} a las ${horaStr}`;
 
-                // 3. Actualizar el Gráfico
                 miGrafico.data.labels = horas;
                 miGrafico.data.datasets[0].data = temps;
                 miGrafico.data.datasets[1].data = hums;
-                miGrafico.update(); // Ordenamos a Chart.js redibujar
+                miGrafico.update(); 
             }
+
+            // Seleccionar automáticamente el día de hoy si no hay fecha seleccionada
+            const inputFecha = document.getElementById('fechaFiltro');
+            if (!inputFecha.value && ultimoDato !== null) {
+                const hoy = new Date();
+                // Formato YYYY-MM-DD necesario para el input type="date"
+                inputFecha.value = hoy.toISOString().split('T')[0]; 
+            }
+            
+            // Actualizar la tabla con la fecha actual si ya tenemos registros
+            filtrarPorFecha();
         });
+
+        // --- FUNCIONES PARA LA TABLA Y FILTROS ---
+        function filtrarPorFecha() {
+            const fechaSeleccionada = document.getElementById('fechaFiltro').value;
+            if (!fechaSeleccionada) return;
+
+            // Filtramos comparando el string YYYY-MM-DD local
+            const datosFiltrados = registrosCompletos.filter(dato => {
+                const d = new Date(dato.timestamp);
+                const year = d.getFullYear();
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const fechaStr = `${year}-${month}-${day}`;
+                
+                return fechaStr === fechaSeleccionada;
+            });
+
+            renderTabla(datosFiltrados);
+        }
+
+        function renderTabla(datos) {
+            const tbody = document.querySelector('#tablaLecturas tbody');
+            tbody.innerHTML = '';
+
+            if (datos.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3">No hay datos para esta fecha</td></tr>';
+                return;
+            }
+
+            // Invertimos para mostrar los más recientes arriba de la tabla
+            const datosInvertidos = [...datos].reverse();
+
+            datosInvertidos.forEach(dato => {
+                const d = new Date(dato.timestamp);
+                const hora = d.toLocaleTimeString('es-ES', { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${hora}</td>
+                    <td>${Number(dato.temp).toFixed(1)}</td>
+                    <td>${Number(dato.hum).toFixed(1)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function descargarCSV() {
+            const tbody = document.querySelector('#tablaLecturas tbody');
+            const filas = tbody.querySelectorAll('tr');
+            
+            // Si la tabla dice "No hay datos..." no descargamos nada
+            if (filas.length === 0 || filas[0].innerText.includes("No hay datos")) {
+                alert("No hay datos en la tabla para exportar.");
+                return;
+            }
+
+            // Cabeceras del CSV
+            let csvContent = "Hora,Temperatura (°C),Humedad (%)\n";
+            
+            // Extracción de datos
+            filas.forEach(fila => {
+                const columnas = fila.querySelectorAll('td');
+                const rowData = Array.from(columnas).map(col => col.innerText);
+                csvContent += rowData.join(",") + "\n";
+            });
+
+            // Generación de la descarga
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const fechaD = document.getElementById('fechaFiltro').value || 'historial';
+            
+            a.setAttribute('href', url);
+            a.setAttribute('download', `telemetria_${fechaD}.csv`);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        // Asignar los eventos a los botones
+        document.getElementById('btnFiltrar').addEventListener('click', filtrarPorFecha);
+        document.getElementById('btnCSV').addEventListener('click', descargarCSV);
+
     </script>
 </body>
 </html>
