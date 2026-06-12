@@ -81,7 +81,7 @@
         .temp-card::before { background: #e74c3c; }
         .hum-card::before { background: #3498db; }
         .chart-card::before { background: #2ecc71; }
-        .history-card { width: 100%; max-width: 800px; } /* Ajuste ancho tabla */
+        .history-card { width: 100%; max-width: 800px; }
         .history-card::before { background: #9b59b6; }
         
         .card-title {
@@ -90,7 +90,9 @@
             color: #7f8c8d;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
+            width: 100%;
+            text-align: left;
         }
         .card-data {
             display: flex;
@@ -113,6 +115,35 @@
             position: relative;
             height: 300px;
             width: 100%;
+        }
+
+        /* DISEÑO DE CUADRÍCULA PARA ESTADÍSTICAS DEL DÍA */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            width: 100%;
+            margin-bottom: 25px;
+        }
+        .stat-box {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            border: 1px solid #e9ecef;
+            position: relative;
+        }
+        .stat-box h4 {
+            font-size: 0.75rem;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+            letter-spacing: 0.5px;
+        }
+        .stat-box p {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #2c3e50;
         }
 
         .status-footer {
@@ -144,7 +175,7 @@
             gap: 10px;
             flex-wrap: wrap;
             margin-bottom: 20px;
-            justify-content: center;
+            width: 100%;
         }
 
         .filtros button {
@@ -160,6 +191,12 @@
         .filtros button:hover {
             background: #2980b9;
         }
+        #btnCSV {
+            background: #2ecc71;
+        }
+        #btnCSV:hover {
+            background: #27ae60;
+        }
 
         .filtros input {
             padding: 8px;
@@ -170,7 +207,9 @@
         .tabla-container {
             overflow-x: auto;
             width: 100%;
-            max-height: 400px; /* Scroll para muchos datos */
+            max-height: 350px; /* Desplazamiento si hay excesivas lecturas */
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
         }
 
         #tablaLecturas {
@@ -180,18 +219,19 @@
 
         #tablaLecturas th,
         #tablaLecturas td {
-            padding: 10px;
+            padding: 12px 10px;
             border-bottom: 1px solid #eee;
             text-align: center;
+            font-size: 0.95rem;
         }
 
         #tablaLecturas th {
-            background: #f4f6f9;
+            background: #f8f9fa;
+            color: #34495e;
             position: sticky;
             top: 0;
             z-index: 1;
         }
-        
     </style>
 </head>
 <body>
@@ -221,7 +261,7 @@
         </div>
 
         <div class="card chart-card">
-            <div class="card-title">Historial Reciente</div>
+            <div class="card-title">Historial Reciente (Últimas 5 Horas)</div>
             <div class="chart-container">
                 <canvas id="myChart"></canvas>
             </div>
@@ -229,13 +269,16 @@
     </div>
 
     <div class="card history-card">
-        <div class="card-title">Historial por Fecha</div>
+        <div class="card-title">Historial y Análisis por Fecha</div>
 
         <div class="filtros">
             <input type="date" id="fechaFiltro">
-            <button id="btnFiltrar">Filtrar</button>
+            <button id="btnFiltrar">Filtrar Día</button>
             <button id="btnCSV">Descargar CSV</button>
         </div>
+
+        <div class="stats-grid" id="statsGrid">
+            </div>
 
         <div class="tabla-container">
             <table id="tablaLecturas">
@@ -247,7 +290,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td colspan="3">Selecciona una fecha para ver los datos</td></tr>
+                    <tr><td colspan="3">Selecciona una fecha para procesar los datos.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -290,9 +333,9 @@
                         label: 'Temperatura (°C)',
                         data: [],
                         borderColor: '#e74c3c',
-                        backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                        backgroundColor: 'rgba(231, 76, 60, 0.05)',
                         borderWidth: 2,
-                        tension: 0.4, 
+                        tension: 0.3, 
                         fill: true,
                         yAxisID: 'y'
                     },
@@ -300,9 +343,9 @@
                         label: 'Humedad (%)',
                         data: [], 
                         borderColor: '#3498db',
-                        backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                        backgroundColor: 'rgba(52, 152, 219, 0.05)',
                         borderWidth: 2,
-                        tension: 0.4,
+                        tension: 0.3,
                         fill: true,
                         yAxisID: 'y1'
                     }
@@ -327,7 +370,7 @@
         });
 
 
-        // --- LECTURA DE FIREBASE Y LÓGICA DE TABLA ---
+        // --- LECTURA DESDE FIREBASE ---
         const historialRef = ref(db, 'sensor/historial');
         let registrosCompletos = [];
 
@@ -335,65 +378,69 @@
             const horas = [];
             const temps = [];
             const hums = [];
-            let ultimoDato = null;
+            let ultimoDatoGlobal = null;
             
-            // Vaciamos el arreglo antes de llenarlo con la data actualizada
             registrosCompletos = [];
+
+            const ahora = Date.now();
+            const cincoHorasEnMs = 5 * 60 * 60 * 1000; // Ventana dinámica de tiempo
 
             snapshot.forEach((childSnapshot) => {
                 const data = childSnapshot.val();
                 if (data !== null) {
-                    registrosCompletos.push(data); // Guardar para la tabla
-                    ultimoDato = data; 
+                    registrosCompletos.push(data); 
+                    ultimoDatoGlobal = data; 
                     
-                    const fechaObj = new Date(data.timestamp);
-                    const horaFormateada = fechaObj.toLocaleTimeString('es-ES', { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                    });
+                    // FILTRADO DINÁMICO: Solo ingresan al gráfico lecturas de las últimas 5 horas
+                    if (ahora - data.timestamp <= cincoHorasEnMs) {
+                        const fechaObj = new Date(data.timestamp);
+                        const horaFormateada = fechaObj.toLocaleTimeString('es-ES', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                        });
 
-                    horas.push(horaFormateada);
-                    temps.push(data.temp);
-                    hums.push(data.hum);
+                        horas.push(horaFormateada);
+                        temps.push(data.temp);
+                        hums.push(data.hum);
+                    }
                 }
             });
 
-            // Actualización de Tarjetas y Gráfico
-            if (ultimoDato !== null) {
-                document.getElementById('temp').innerText = Number(ultimoDato.temp).toFixed(1);
-                document.getElementById('hum').innerText = Number(ultimoDato.hum).toFixed(1);
+            // Actualización de los elementos principales en tiempo real
+            if (ultimoDatoGlobal !== null) {
+                document.getElementById('temp').innerText = Number(ultimoDatoGlobal.temp).toFixed(1);
+                document.getElementById('hum').innerText = Number(ultimoDatoGlobal.hum).toFixed(1);
 
-                const fechaFinal = new Date(ultimoDato.timestamp);
+                const fechaFinal = new Date(ultimoDatoGlobal.timestamp);
                 const fechaStr = fechaFinal.toLocaleDateString('es-ES');
                 const horaStr = fechaFinal.toLocaleTimeString('es-ES', { 
                     hour: '2-digit', minute: '2-digit' 
                 });
                 document.getElementById('timestamp').innerText = `Última lectura: ${fechaStr} a las ${horaStr}`;
-
-                miGrafico.data.labels = horas;
-                miGrafico.data.datasets[0].data = temps;
-                miGrafico.data.datasets[1].data = hums;
-                miGrafico.update(); 
             }
 
-            // Seleccionar automáticamente el día de hoy si no hay fecha seleccionada
+            // Actualizar la línea de tiempo del gráfico
+            miGrafico.data.labels = horas;
+            miGrafico.data.datasets[0].data = temps;
+            miGrafico.data.datasets[1].data = hums;
+            miGrafico.update(); 
+
+            // Establecer por defecto la fecha de hoy si el selector está limpio
             const inputFecha = document.getElementById('fechaFiltro');
-            if (!inputFecha.value && ultimoDato !== null) {
+            if (!inputFecha.value) {
                 const hoy = new Date();
-                // Formato YYYY-MM-DD necesario para el input type="date"
                 inputFecha.value = hoy.toISOString().split('T')[0]; 
             }
             
-            // Actualizar la tabla con la fecha actual si ya tenemos registros
             filtrarPorFecha();
         });
 
-        // --- FUNCIONES PARA LA TABLA Y FILTROS ---
+
+        // --- PROCESAMIENTO, FILTRADO Y ESTADÍSTICAS ---
         function filtrarPorFecha() {
             const fechaSeleccionada = document.getElementById('fechaFiltro').value;
             if (!fechaSeleccionada) return;
 
-            // Filtramos comparando el string YYYY-MM-DD local
             const datosFiltrados = registrosCompletos.filter(dato => {
                 const d = new Date(dato.timestamp);
                 const year = d.getFullYear();
@@ -404,7 +451,76 @@
                 return fechaStr === fechaSeleccionada;
             });
 
+            calcularMetricasDiarias(datosFiltrados);
             renderTabla(datosFiltrados);
+        }
+
+        function calcularMetricasDiarias(datos) {
+            const statsGrid = document.getElementById('statsGrid');
+            
+            if (datos.length === 0) {
+                statsGrid.innerHTML = '<p style="color:#7f8c8d; grid-column: 1/-1; text-align:center;">Sin métricas disponibles para esta fecha.</p>';
+                return;
+            }
+
+            // Convertir arreglos numéricos puros
+            const tValores = datos.map(d => Number(d.temp));
+            const hValores = datos.map(d => Number(d.hum));
+
+            // Análisis de Máximos, Mínimos y Promedios
+            const maxT = Math.max(...tValores);
+            const minT = Math.min(...tValores);
+            const promT = tValores.reduce((a, b) => a + b, 0) / tValores.length;
+
+            const maxH = Math.max(...hValores);
+            const minH = Math.min(...hValores);
+            const promH = hValores.reduce((a, b) => a + b, 0) / hValores.length;
+
+            // ANALÍTICA DE LECTURAS PERDIDAS / CANCELADAS
+            // Ordenar cronológicamente para medir los saltos de tiempo en el día filtrado
+            const datosOrdenados = [...datos].sort((a, b) => a.timestamp - b.timestamp);
+            const primerTimestamp = datosOrdenados[0].timestamp;
+            const ultimoTimestamp = datosOrdenados[datosOrdenados.length - 1].timestamp;
+
+            // IMPORTANTE: Define aquí en milisegundos la frecuencia con la que tu hardware transmite.
+            // Ejemplo: 5 minutos = 5 * 60 * 1000 ms. Ajusta si tu transmisión es diferente.
+            const intervaloEsperadoMs = 5 * 60 * 1000; 
+            let lecturasPerdidas = 0;
+
+            if (datosOrdenados.length > 1) {
+                const deltaTiempo = ultimoTimestamp - primerTimestamp;
+                const lecturasEsperadas = Math.floor(deltaTiempo / intervaloEsperadoMs) + 1;
+                lecturasPerdidas = lecturasEsperadas - datosOrdenados.length;
+                if (lecturasPerdidas < 0) lecturasPerdidas = 0; // Previene desfases menores por retardo de red
+            }
+
+            // Inyección del diseño de tarjetas estadísticas en la UI
+            statsGrid.innerHTML = `
+                <div class="stat-box" style="border-top: 4px solid #2ecc71;">
+                    <h4>Lecturas Exitosas</h4>
+                    <p>${datos.length}</p>
+                </div>
+                <div class="stat-box" style="border-top: 4px solid #e67e22;">
+                    <h4>Lecturas Canceladas / Perdidas</h4>
+                    <p>${lecturasPerdidas}</p>
+                </div>
+                <div class="stat-box" style="border-top: 4px solid #e74c3c;">
+                    <h4>Temp. Máx / Mín</h4>
+                    <p>${maxT.toFixed(1)}°C / ${minT.toFixed(1)}°C</p>
+                </div>
+                <div class="stat-box" style="border-top: 4px solid #f39c12;">
+                    <h4>Promedio Temperatura</h4>
+                    <p>${promT.toFixed(1)}°C</p>
+                </div>
+                <div class="stat-box" style="border-top: 4px solid #3498db;">
+                    <h4>Humedad Máx / Mín</h4>
+                    <p>${maxH.toFixed(1)}% / ${minH.toFixed(1)}%</p>
+                </div>
+                <div class="stat-box" style="border-top: 4px solid #9b59b6;">
+                    <h4>Promedio Humedad</h4>
+                    <p>${promH.toFixed(1)}%</p>
+                </div>
+            `;
         }
 
         function renderTabla(datos) {
@@ -412,11 +528,11 @@
             tbody.innerHTML = '';
 
             if (datos.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="3">No hay datos para esta fecha</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3">No hay datos para esta fecha en la base de datos.</td></tr>';
                 return;
             }
 
-            // Invertimos para mostrar los más recientes arriba de la tabla
+            // Inversión del array para posicionar la lectura más reciente al inicio superior de la lista
             const datosInvertidos = [...datos].reverse();
 
             datosInvertidos.forEach(dato => {
@@ -429,7 +545,7 @@
                 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${hora}</td>
+                    <td><strong>${hora}</strong></td>
                     <td>${Number(dato.temp).toFixed(1)}</td>
                     <td>${Number(dato.hum).toFixed(1)}</td>
                 `;
@@ -441,39 +557,33 @@
             const tbody = document.querySelector('#tablaLecturas tbody');
             const filas = tbody.querySelectorAll('tr');
             
-            // Si la tabla dice "No hay datos..." no descargamos nada
             if (filas.length === 0 || filas[0].innerText.includes("No hay datos")) {
-                alert("No hay datos en la tabla para exportar.");
+                alert("No existen datos estructurales válidos para exportar en este día.");
                 return;
             }
 
-            // Cabeceras del CSV
-            let csvContent = "Hora,Temperatura (°C),Humedad (%)\n";
+            let csvContent = "Hora,Temperatura (C),Humedad (%)\n";
             
-            // Extracción de datos
             filas.forEach(fila => {
                 const columnas = fila.querySelectorAll('td');
                 const rowData = Array.from(columnas).map(col => col.innerText);
                 csvContent += rowData.join(",") + "\n";
             });
 
-            // Generación de la descarga
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             const fechaD = document.getElementById('fechaFiltro').value || 'historial';
             
             a.setAttribute('href', url);
-            a.setAttribute('download', `telemetria_${fechaD}.csv`);
+            a.setAttribute('download', `reporte_telemetria_${fechaD}.csv`);
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
         }
 
-        // Asignar los eventos a los botones
         document.getElementById('btnFiltrar').addEventListener('click', filtrarPorFecha);
         document.getElementById('btnCSV').addEventListener('click', descargarCSV);
-
     </script>
 </body>
 </html>
